@@ -29,7 +29,7 @@ export default function Page() {
 	const seconds = totalSeconds % 60;
 
 	return (
-		<div className="min-h-screen flex flex-col items-center justify-center">
+		<div className="h-dvh flex flex-col items-center justify-center overflow-hidden">
 			<div className="flex flex-row items-center leading-none">
 				<div className="font-medium">距离离职还有</div>
 				<AnimateCountClient
