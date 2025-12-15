@@ -31,31 +31,31 @@ export default function Page() {
 	return (
 		<div className="min-h-screen flex flex-col items-center justify-center">
 			<div className="flex flex-row items-center leading-none">
-				<div className="font-semibold">距离离职还有</div>
+				<div className="font-medium">距离离职还有</div>
 				<AnimateCountClient
 					count={days}
 					minDigits={1}
-					className="font-semibold mx-1 tabular-nums"
+					className="font-medium mx-1 tabular-nums"
 				/>
-				<div className="font-semibold">天</div>
+				<div className="font-medium">天</div>
 				<AnimateCountClient
 					count={hours}
 					minDigits={2}
-					className="font-semibold mx-1 tabular-nums"
+					className="font-medium mx-1 tabular-nums"
 				/>
-				<div className="font-semibold">小时</div>
+				<div className="font-medium">小时</div>
 				<AnimateCountClient
 					count={minutes}
 					minDigits={2}
-					className="font-semibold mx-1 tabular-nums"
+					className="font-medium mx-1 tabular-nums"
 				/>
-				<div className="font-semibold">分钟</div>
+				<div className="font-medium">分钟</div>
 				<AnimateCountClient
 					count={seconds}
 					minDigits={2}
-					className="font-semibold mx-1 tabular-nums"
+					className="font-medium mx-1 tabular-nums"
 				/>
-				<div className="font-semibold">秒</div>
+				<div className="font-medium">秒</div>
 			</div>
 		</div>
 	);
