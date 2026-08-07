@@ -190,3 +190,19 @@
 		filter: blur(2px);
 	}
 }
+
+.bus-now-blink {
+	animation: busNowBlink 1s steps(1, end) infinite;
+}
+
+@keyframes busNowBlink {
+	50% {
+		opacity: 0.2;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.bus-now-blink {
+		animation: none;
+	}
+}

@@ -1,30 +1,306 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
+const BUS_API_URL = "https://home-api.takecoffee.top/v2/GetAdvancedBusInfo";
+const BUS_SSE_URL = `${BUS_API_URL}?sse=true`;
+const LINE_COLORS = [
+	"text-yellow-600",
+	"text-blue-600",
+	"text-red-600",
+	"text-violet-600",
+	"text-cyan-600",
+] as const;
+const LINE_CONFIG: Record<
+	string,
+	{
+		busNumber: string;
+		busName: string;
+	}
+> = {
+	"广州东-家": {
+		busNumber: "776",
+		busName: "EastStation",
+	},
+	"家-广州东": {
+		busNumber: "776",
+		busName: "Home",
+	},
+	"581路-上班": {
+		busNumber: "581",
+		busName: "Home",
+	},
+	"581路-下班": {
+		busNumber: "581",
+		busName: "Workplace",
+	},
+};
+
+type BusInfo = {
+	busId: string;
+	licensePlate: string;
+	lines: string;
+	reachtime: string;
+	surplus: string;
+	travelTime: string;
+};
+
+type DisplayBus = BusInfo & {
+	isHistorical: boolean;
+};
+
+type BusPayload = {
+	bus_list?: BusInfo[];
+	data?: {
+		bus_list?: BusInfo[];
+	};
+};
+
 export default function Page() {
+	const [buses, setBuses] = useState<DisplayBus[] | null>(null);
+
+	useEffect(() => {
+		const abortController = new AbortController();
+		let eventSource: EventSource | null = null;
+
+		const updateBuses = (busList: BusInfo[]) => {
+			const currentBuses = selectNearestBusPerLine(busList);
+			setBuses((previousBuses) =>
+				mergeBusSnapshots(previousBuses, currentBuses),
+			);
+		};
+
+		const connectSse = () => {
+			eventSource = new EventSource(BUS_SSE_URL);
+
+			eventSource.onmessage = (event) => {
+				try {
+					const payload = JSON.parse(event.data) as BusPayload;
+					updateBuses(getBusList(payload));
+				} catch (error) {
+					console.error("Failed to parse bus SSE message", error);
+					setBuses(markBusesAsHistorical);
+				}
+			};
+
+			eventSource.onerror = () => {
+				setBuses(markBusesAsHistorical);
+			};
+		};
+
+		const loadInitialBuses = async () => {
+			try {
+				const response = await fetch(BUS_API_URL, {
+					cache: "no-store",
+					signal: abortController.signal,
+				});
+
+				if (!response.ok) {
+					throw new Error(`Initial bus request failed: ${response.status}`);
+				}
+
+				const payload = (await response.json()) as BusPayload;
+				updateBuses(getBusList(payload));
+			} catch (error) {
+				if (!abortController.signal.aborted) {
+					console.error("Failed to load initial bus data", error);
+					setBuses(markBusesAsHistorical);
+				}
+			} finally {
+				if (!abortController.signal.aborted) {
+					connectSse();
+				}
+			}
+		};
+
+		void loadInitialBuses();
+
+		return () => {
+			abortController.abort();
+			eventSource?.close();
+		};
+	}, []);
+
+	let content: React.ReactNode;
+
+	const isLoading = buses === null || buses.length === 0;
+
+	if (isLoading) {
+		content = Object.entries(LINE_CONFIG)
+			.sort(([firstLine], [secondLine]) =>
+				firstLine.localeCompare(secondLine, "zh-CN", {
+					numeric: true,
+					sensitivity: "base",
+				}),
+			)
+			.map(([lines, { busName, busNumber }]) => (
+				<BusRow
+					busColor={getLineColor(lines)}
+					busName={busName}
+					busNumber={busNumber}
+					busTime="--"
+					isHistorical={false}
+					isLoading
+					isNow={false}
+					key={lines}
+				/>
+			));
+	} else {
+		content = buses.map((bus) => {
+			const { busName, busNumber } = getLineDisplay(bus.lines);
+			const { isNow, label } = formatTravelTime(bus.travelTime, bus.surplus);
+
+			return (
+				<BusRow
+					busColor={getLineColor(bus.lines)}
+					busName={busName}
+					busNumber={busNumber}
+					busTime={label}
+					isHistorical={bus.isHistorical}
+					isLoading={false}
+					isNow={isNow}
+					key={bus.lines}
+				/>
+			);
+		});
+	}
+
 	return (
 		<div className="h-dvh flex flex-col items-center justify-center overflow-hidden">
-			<section className="flex flex-col items-start">
-				<BusRow
-					busName="SoftwareWest"
-					busNumber="581"
-					busTime="1min"
-					busColor="text-yellow-600"
-				/>
-				<BusRow
-					busName="Workplace"
-					busNumber="581"
-					busTime="3min"
-					busColor="text-blue-600"
-				/>
-				<BusRow
-					busName="Workplace"
-					busNumber="429"
-					busTime="1min"
-					busColor="text-red-600"
-				/>
+			<section aria-busy={isLoading} className="flex flex-col items-start">
+				{content}
 			</section>
 		</div>
 	);
+}
+
+function parseTravelMinutes(travelTime: string) {
+	const match = /^(\d+)\s*分钟$/.exec(travelTime.trim());
+	return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function getBusList(payload: BusPayload) {
+	const busList = payload.bus_list ?? payload.data?.bus_list;
+
+	if (!Array.isArray(busList)) {
+		throw new Error("Bus response does not contain bus_list");
+	}
+
+	return busList;
+}
+
+function selectNearestBusPerLine(busList: BusInfo[]) {
+	const uniqueBuses = new Map<string, BusInfo>();
+
+	for (const bus of busList) {
+		const busId = bus.busId.trim();
+
+		if (busId && !uniqueBuses.has(busId)) {
+			uniqueBuses.set(busId, bus);
+		}
+	}
+
+	const nearestByLine = new Map<string, BusInfo>();
+
+	for (const bus of uniqueBuses.values()) {
+		const line = bus.lines.trim();
+		const current = nearestByLine.get(line);
+
+		if (!current) {
+			nearestByLine.set(line, bus);
+			continue;
+		}
+
+		const currentMinutes = parseTravelMinutes(current.travelTime);
+		const candidateMinutes = parseTravelMinutes(bus.travelTime);
+
+		if (
+			candidateMinutes !== null &&
+			(currentMinutes === null || candidateMinutes < currentMinutes)
+		) {
+			nearestByLine.set(line, bus);
+		}
+	}
+
+	return Array.from(nearestByLine.values()).sort((first, second) =>
+		compareBusLines(first, second),
+	);
+}
+
+function mergeBusSnapshots(
+	previousBuses: DisplayBus[] | null,
+	currentBuses: BusInfo[],
+) {
+	const currentLines = new Set(currentBuses.map((bus) => bus.lines.trim()));
+	const mergedBuses: DisplayBus[] = currentBuses.map((bus) => ({
+		...bus,
+		isHistorical: false,
+	}));
+
+	for (const bus of previousBuses ?? []) {
+		if (!currentLines.has(bus.lines.trim())) {
+			mergedBuses.push({
+				...bus,
+				isHistorical: true,
+			});
+		}
+	}
+
+	return mergedBuses.sort(compareBusLines);
+}
+
+function markBusesAsHistorical(previousBuses: DisplayBus[] | null) {
+	return (
+		previousBuses?.map((bus) => ({
+			...bus,
+			isHistorical: true,
+		})) ?? null
+	);
+}
+
+function compareBusLines(first: BusInfo, second: BusInfo) {
+	return first.lines.localeCompare(second.lines, "zh-CN", {
+		numeric: true,
+		sensitivity: "base",
+	});
+}
+
+function getLineDisplay(lines: string) {
+	const normalizedLines = lines.trim();
+
+	return (
+		LINE_CONFIG[normalizedLines] ?? {
+			busNumber: "",
+			busName: normalizedLines,
+		}
+	);
+}
+
+function formatTravelTime(travelTime: string, surplus: string) {
+	if (surplus.trim() === "即将到达") {
+		return { label: "now", isNow: true };
+	}
+
+	const minutes = parseTravelMinutes(travelTime);
+
+	if (minutes !== null) {
+		return { label: `${minutes}min`, isNow: false };
+	}
+
+	return travelTime.trim() === "等待中"
+		? { label: "wait", isNow: false }
+		: { label: travelTime, isNow: false };
+}
+
+function getLineColor(lines: string) {
+	let hash = 0;
+
+	for (const character of lines) {
+		hash = (hash * 31 + (character.codePointAt(0) ?? 0)) | 0;
+	}
+
+	return LINE_COLORS[Math.abs(hash) % LINE_COLORS.length];
 }
 
 function BusRow({
@@ -32,18 +308,24 @@ function BusRow({
 	busNumber,
 	busTime,
 	busColor,
+	isHistorical,
+	isLoading,
+	isNow,
 }: {
-	busName?: string;
-	busNumber?: string;
-	busTime?: string;
-	busColor?: string;
+	busName: string;
+	busNumber: string;
+	busTime: string;
+	busColor: string;
+	isHistorical: boolean;
+	isLoading: boolean;
+	isNow: boolean;
 }) {
 	return (
 		<section className="flex items-center gap-2">
 			<div
 				className={cn(
 					"min-w-[30px] font-medium text-sm font-pixel-square",
-					busColor,
+					isHistorical ? "text-red-600" : busColor,
 				)}
 			>
 				{Array.from(busNumber ?? "").map((digit, index) => (
@@ -55,12 +337,35 @@ function BusRow({
 					</span>
 				))}
 			</div>
-			<div className="min-w-30 font-medium text-sm font-pixel-square">
+			<div
+				className={cn(
+					"min-w-30 font-medium text-sm font-pixel-square",
+					isHistorical && "text-red-600",
+				)}
+			>
 				{busName}
 			</div>
-			<section className="min-w-[50px] flex items-center gap-0.5 font-pixel-square justify-end">
-				<WifiIcon className="text-green-600 mt-px" />
-				<div className="font-medium text-sm text-green-600">{busTime}</div>
+			<section
+				className={cn(
+					"min-w-[80px] flex items-center gap-0.5 font-pixel-square justify-end",
+					isLoading && "opacity-40",
+				)}
+			>
+				<WifiIcon
+					className={cn(
+						"mt-px",
+						isHistorical ? "text-red-600" : "text-green-600",
+					)}
+				/>
+				<div
+					className={cn(
+						"font-medium text-sm",
+						isHistorical ? "text-red-600" : "text-green-600",
+						isNow && !isHistorical && !isLoading && "bus-now-blink",
+					)}
+				>
+					{busTime}
+				</div>
 			</section>
 		</section>
 	);
