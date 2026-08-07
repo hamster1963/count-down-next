@@ -27,6 +27,10 @@ const LINE_CONFIG: Record<
 		busNumber: "776",
 		busName: "Home",
 	},
+	"494路-下班": {
+		busNumber: "494",
+		busName: "Workplace",
+	},
 	"581路-上班": {
 		busNumber: "581",
 		busName: "Home",
