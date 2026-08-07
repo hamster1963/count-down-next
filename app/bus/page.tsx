@@ -19,18 +19,6 @@ const LINE_CONFIG: Record<
 		busName: string;
 	}
 > = {
-	"广州东-家": {
-		busNumber: "776",
-		busName: "EastStation",
-	},
-	"家-广州东": {
-		busNumber: "776",
-		busName: "Home",
-	},
-	"494路-下班": {
-		busNumber: "494",
-		busName: "Workplace",
-	},
 	"581路-上班": {
 		busNumber: "581",
 		busName: "Home",
@@ -39,7 +27,22 @@ const LINE_CONFIG: Record<
 		busNumber: "581",
 		busName: "Workplace",
 	},
+	"494路-下班": {
+		busNumber: "494",
+		busName: "Workplace",
+	},
+	"广州东-家": {
+		busNumber: "776",
+		busName: "EastStation",
+	},
+	"家-广州东": {
+		busNumber: "776",
+		busName: "Home",
+	},
 };
+const LINE_ORDER = new Map(
+	Object.keys(LINE_CONFIG).map((line, index) => [line, index]),
+);
 
 type BusInfo = {
 	busId: string;
@@ -133,10 +136,7 @@ export default function Page() {
 	if (isLoading) {
 		content = Object.entries(LINE_CONFIG)
 			.sort(([firstLine], [secondLine]) =>
-				firstLine.localeCompare(secondLine, "zh-CN", {
-					numeric: true,
-					sensitivity: "base",
-				}),
+				compareLineNames(firstLine, secondLine),
 			)
 			.map(([lines, { busName, busNumber }]) => (
 				<BusRow
@@ -264,7 +264,28 @@ function markBusesAsHistorical(previousBuses: DisplayBus[] | null) {
 }
 
 function compareBusLines(first: BusInfo, second: BusInfo) {
-	return first.lines.localeCompare(second.lines, "zh-CN", {
+	return compareLineNames(first.lines, second.lines);
+}
+
+function compareLineNames(first: string, second: string) {
+	const firstLine = first.trim();
+	const secondLine = second.trim();
+	const firstOrder = LINE_ORDER.get(firstLine);
+	const secondOrder = LINE_ORDER.get(secondLine);
+
+	if (firstOrder !== undefined && secondOrder !== undefined) {
+		return firstOrder - secondOrder;
+	}
+
+	if (firstOrder !== undefined) {
+		return -1;
+	}
+
+	if (secondOrder !== undefined) {
+		return 1;
+	}
+
+	return firstLine.localeCompare(secondLine, "zh-CN", {
 		numeric: true,
 		sensitivity: "base",
 	});
