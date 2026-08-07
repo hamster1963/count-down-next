@@ -129,16 +129,39 @@ export default function Page() {
 		};
 	}, []);
 
-	let content: React.ReactNode;
-
 	const isLoading = buses === null || buses.length === 0;
+	const busesByLine = new Map(
+		(buses ?? []).map((bus) => [bus.lines.trim(), bus]),
+	);
 
-	if (isLoading) {
-		content = Object.entries(LINE_CONFIG)
-			.sort(([firstLine], [secondLine]) =>
-				compareLineNames(firstLine, secondLine),
-			)
-			.map(([lines, { busName, busNumber }]) => (
+	const renderBus = (bus: DisplayBus) => {
+		const { busName, busNumber } = getLineDisplay(bus.lines);
+		const { isNow, label } = formatTravelTime(bus.travelTime, bus.surplus);
+
+		return (
+			<BusRow
+				busColor={getLineColor(bus.lines)}
+				busName={busName}
+				busNumber={busNumber}
+				busTime={label}
+				isHistorical={bus.isHistorical}
+				isLoading={false}
+				isNow={isNow}
+				key={bus.lines}
+			/>
+		);
+	};
+
+	const configuredRows = Object.entries(LINE_CONFIG)
+		.sort(([firstLine], [secondLine]) =>
+			compareLineNames(firstLine, secondLine),
+		)
+		.map(([lines, { busName, busNumber }]) => {
+			const bus = busesByLine.get(lines);
+
+			return bus ? (
+				renderBus(bus)
+			) : (
 				<BusRow
 					busColor={getLineColor(lines)}
 					busName={busName}
@@ -149,26 +172,14 @@ export default function Page() {
 					isNow={false}
 					key={lines}
 				/>
-			));
-	} else {
-		content = buses.map((bus) => {
-			const { busName, busNumber } = getLineDisplay(bus.lines);
-			const { isNow, label } = formatTravelTime(bus.travelTime, bus.surplus);
-
-			return (
-				<BusRow
-					busColor={getLineColor(bus.lines)}
-					busName={busName}
-					busNumber={busNumber}
-					busTime={label}
-					isHistorical={bus.isHistorical}
-					isLoading={false}
-					isNow={isNow}
-					key={bus.lines}
-				/>
 			);
 		});
-	}
+
+	const extraRows = (buses ?? [])
+		.filter((bus) => !Object.hasOwn(LINE_CONFIG, bus.lines.trim()))
+		.map(renderBus);
+
+	const content = [...configuredRows, ...extraRows];
 
 	return (
 		<div className="h-dvh flex flex-col items-center justify-center overflow-hidden">
