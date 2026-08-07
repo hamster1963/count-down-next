@@ -5,7 +5,7 @@ import AnimateCountClient from "@/components/animate-count";
 
 export default function Page() {
 	const targetDate = useMemo(() => {
-		return new Date(2026, 3, 5, 0, 0, 0);
+		return new Date(2027, 3, 5, 0, 0, 0);
 	}, []);
 
 	const [now, setNow] = useState(() => Date.now());
